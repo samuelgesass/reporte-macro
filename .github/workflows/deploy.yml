@@ -2,9 +2,9 @@ name: build-and-deploy
 
 on:
   schedule:
-    - cron: '30 05 * * 1-5'   # 07:30 Madrid en verano (CEST)
-    - cron: '30 06 * * 1-5'   # 07:30 Madrid en invierno (CET)
-  workflow_dispatch: {}       # permitir ejecutar a mano
+    - cron: '30 05 * * 1-5'   # 07:30 Madrid verano
+    - cron: '30 06 * * 1-5'   # 07:30 Madrid invierno
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -19,18 +19,16 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
 
-      # ⬇️ Arreglo: instalar deps sin package-lock.json
       - name: Install deps
         run: npm install
 
-      - name: Build site
-        run: npm run build
+      - name: Install Playwright (Chromium)
+        run: npx playwright install --with-deps chromium
 
-      # ⬇️ Solo valida hora cuando viene del cron
-      - name: Validar 07:30 Madrid
-        if: ${{ github.event_name == 'schedule' }}
-        run: |
-          node -e "const d=new Date().toLocaleString('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}); if(d!=='07:30'){console.log('No es 07:30 Madrid, salgo. Hora local:', d); process.exit(78);} else {console.log('Es 07:30 Madrid, publico.');}"
+      - name: Generate report (OpenAI + Investing)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: npm run generate
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
