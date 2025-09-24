@@ -111,4 +111,10 @@ async function main() {
   const indexHtml = `<!doctype html><meta charset="utf-8"><title>Reportes macro</title>
   <body style="font-family:system-ui;max-width:900px;margin:24px auto;padding:0 16px">
     <h1>Reportes macro</h1>
-    <p><a href="./latest.html">Ver reporte de hoy (07:30 Madrid)</a
+    <p><a href="./latest.html">Ver reporte de hoy (07:30 Madrid)</a></p>
+  </body>`;
+  fs.writeFileSync(path.join('dist', 'index.html'), indexHtml);
+  console.log('OK: generado dist/latest.html');
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
