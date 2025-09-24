@@ -2,6 +2,11 @@
   "name": "reporte-macro",
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "build": "node src/build.js" },
-  "dependencies": { "dayjs": "^1.11.11" }
+  "scripts": {
+    "generate": "node src/generate.js"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.11",
+    "playwright": "^1.47.2"
+  }
 }
