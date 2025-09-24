@@ -1,0 +1,31 @@
+name: build-and-deploy
+on:
+  schedule:
+    - cron: '30 05 * * 1-5'   # 07:30 Madrid en verano
+    - cron: '30 06 * * 1-5'   # 07:30 Madrid en invierno
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - run: npm run build
+      - name: Validar hora Madrid
+        run: |
+          node -e "const d=new Date().toLocaleString('es-ES',{timeZone:'Europe/Madrid',hour:'2-digit',minute:'2-digit',hour12:false}); if(d!=='07:30'){console.log('No es 07:30 Madrid, salgo. Hora local:', d); process.exit(78);} else {console.log('Es 07:30 Madrid, publico.');}"
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: ./dist }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/deploy-pages@v4
