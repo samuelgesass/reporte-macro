@@ -2,8 +2,9 @@ name: build-and-deploy
 
 on:
   schedule:
-    - cron: '30 05 * * 1-5'   # 07:30 Madrid verano
-    - cron: '30 06 * * 1-5'   # 07:30 Madrid invierno
+    # 07:30 Madrid (verano e invierno)
+    - cron: '30 05 * * 1-5'
+    - cron: '30 06 * * 1-5'
   workflow_dispatch: {}
 
 permissions:
