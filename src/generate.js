@@ -17,7 +17,9 @@ function blogTitle(d) {
   return d.tz(TZ).format('dddd D [de] MMMM [de] YYYY');
 }
 
-// --- 1) Extrae eventos de Investing con tus filtros
+/* ===========================
+   1) Scraping Investing
+   =========================== */
 async function fetchInvestingEvents() {
   const browser = await chromium.launch({ args: ['--disable-dev-shm-usage'] });
   const page = await browser.newPage({
@@ -25,34 +27,44 @@ async function fetchInvestingEvents() {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36'
   });
 
-  // Márgenes amplios: Investing a veces tarda
   page.setDefaultNavigationTimeout(90000);
   page.setDefaultTimeout(90000);
 
-  // No uses "networkidle" aquí
+  // Evita esperar "networkidle" (no se cumple con ads)
   await page.goto('https://es.investing.com/economic-calendar/', { waitUntil: 'domcontentloaded' });
 
-  // Aceptar cookies si aparece
+  // Aceptar cookies (varía por región)
   const consentSelectors = [
+    '#onetrust-accept-btn-handler',
     'button:has-text("Aceptar")',
     'button:has-text("Estoy de acuerdo")',
-    'button:has-text("De acuerdo")',
-    '#onetrust-accept-btn-handler'
+    'button:has-text("De acuerdo")'
   ];
   for (const sel of consentSelectors) {
     const btn = page.locator(sel);
     if (await btn.count()) { await btn.click().catch(()=>{}); break; }
   }
 
-  // Helpers
+  // Quitar overlays que bloquean visibilidad/clicks
+  await page.evaluate(() => {
+    const killers = [
+      '#onetrust-banner-sdk',
+      '#onetrust-consent-sdk',
+      '.overlay',
+      '.modal',
+      '[style*="position: fixed"]'
+    ];
+    document.querySelectorAll(killers.join(',')).forEach(el => el.remove());
+  });
+
   const click = async (txt) => {
     const el = page.locator(`text=${txt}`).first();
     if (await el.count()) await el.click().catch(()=>{});
   };
 
-  // Abre filtros y aplica como en tu captura
+  // Filtros como en tu captura
   await click('Filtros');
-  await click('Seleccionar todos'); // limpia países
+  await click('Seleccionar todos'); // limpiar países
   await click('Estados Unidos');
   await click('España');
 
@@ -62,30 +74,33 @@ async function fetchInvestingEvents() {
     if (await chk.count()) await chk.check().catch(()=>{});
   }
 
-  await click('Impacto'); // prioriza alto
+  await click('Impacto'); // alto impacto
   await click('3');       // 3 toros
 
   await click('Aplicar');
 
-  // Espera tabla
-  await page.waitForSelector('table tbody tr');
+  // Espera a que haya filas en el DOM (no exigimos visible)
+  await page.waitForSelector('table tbody tr', { state: 'attached' });
 
-  // Extrae filas
-  const rows = await page.$$eval('table tbody tr', trs => trs.map(tr => {
-    const tds = tr.querySelectorAll('td');
-    const hora = (tds[0]?.innerText || '').trim();
-    const nombre = (tds[1]?.innerText || '').trim();
-    const real = (tds[3]?.innerText || '').trim();
-    const anterior = (tds[4]?.innerText || '').trim();
-    const consenso = (tds[5]?.innerText || '').trim();
-    const flag = tr.querySelector('img[title]')?.getAttribute('title') || '';
-    const bulls = tds[2]?.querySelectorAll('i[class*="bull"]').length || 0;
-    return { hora, nombre, real, anterior, consenso, pais: flag, impacto: bulls };
-  }));
+  // Extrae filas aunque algún overlay tape la tabla
+  const rows = await page.evaluate(() => {
+    const trs = Array.from(document.querySelectorAll('table tbody tr'));
+    return trs.map(tr => {
+      const tds = tr.querySelectorAll('td');
+      const hora = (tds[0]?.innerText || '').trim();
+      const nombre = (tds[1]?.innerText || '').trim();
+      const real = (tds[3]?.innerText || '').trim();
+      const anterior = (tds[4]?.innerText || '').trim();
+      const consenso = (tds[5]?.innerText || '').trim();
+      const flag = tr.querySelector('img[title]')?.getAttribute('title') || '';
+      const bulls = (tds[2]?.querySelectorAll('i[class*="bull"]') || []).length;
+      return { hora, nombre, real, anterior, consenso, pais: flag, impacto: bulls };
+    });
+  });
 
   await browser.close();
 
-  // Filtro adicional en memoria (por si la UI no aplicó algo)
+  // Filtro en memoria (por si la UI no aplicó algo)
   const keepCountry = r => ['Estados Unidos', 'España'].includes(r.pais);
   const keepCat = r => /(empleo|desempleo|nóminas|PMI|PIB|ventas|producción|confianza|IPC|IPP|PCE|banco central|tipos|actas|comparecencia)/i.test(r.nombre);
   let evs = rows.filter(r => keepCountry(r) && keepCat(r));
@@ -98,7 +113,9 @@ async function fetchInvestingEvents() {
   };
 }
 
-// --- 2) Llama a OpenAI con tu API key para redactar el informe
+/* ===========================
+   2) Llamada a OpenAI (tu cuenta)
+   =========================== */
 async function callOpenAI({ us, es }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('Falta OPENAI_API_KEY');
@@ -118,12 +135,12 @@ async function callOpenAI({ us, es }) {
         content:
 `Genera un REPORTE DIARIO en español (hora Madrid) con esta estructura:
 
-1) RESUMEN DE NARRATIVA: EEUU y España en los cuatro motores y qué descuenta el mercado HOY. Si un dato de hoy se enlaza con publicaciones de los últimos 2–3 días (misma serie o bancos centrales), añade 1–2 frases de CONTEXTO.
+1) RESUMEN DE NARRATIVA: EEUU y España en los cuatro motores y qué descuenta el mercado HOY. Si un dato de hoy enlaza con publicaciones de los últimos 2–3 días (misma serie o bancos centrales), añade 1–2 frases de CONTEXTO.
 2) ESTADOS UNIDOS: tabla con eventos de hoy (NOMBRE EXACTO de Investing), HORA (Madrid), DATO ANTERIOR, CONSENSO, DATO REAL si existe, e IMPACTO esperado por activos (incluye EURUSD) + comentario corto.
 3) ESPAÑA: misma tabla y comentario corto.
 4) SESGO TÁCTICO EURUSD: 2–3 líneas claras según sorpresa vs consenso.
 
-Usa EXACTAMENTE estos eventos (no inventes nada; pon "—" si falta):
+Usa EXACTAMENTE estos eventos (si algo falta, escribe "—"; no inventes):
 US_EVENTS=${JSON.stringify(us)}
 ES_EVENTS=${JSON.stringify(es)}
 
@@ -144,9 +161,19 @@ Formato de salida: HTML listo para publicar. Encabeza con <h1>${todayH1}</h1>.`
   return data.choices[0].message.content;
 }
 
-// --- 3) Genera: un post por día, índice ordenado y latest.html
+/* ===========================
+   3) Generación de blog
+   =========================== */
 async function main() {
-  const { us, es } = await fetchInvestingEvents();
+  // Fallback: si Investing falla, publicamos igual (tablas vacías)
+  let us = [], es = [];
+  try {
+    const got = await fetchInvestingEvents();
+    us = got.us; es = got.es;
+  } catch (err) {
+    console.error('Fallo scraping Investing (publico con fallback):', err.message || err);
+  }
+
   const html = await callOpenAI({ us, es });
 
   const outDir = 'dist';
