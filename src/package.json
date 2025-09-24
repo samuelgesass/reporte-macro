@@ -1,7 +1,1 @@
-{
-  "name": "reporte-macro",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": { "build": "node src/build.js" },
-  "dependencies": { "dayjs": "^1.11.11" }
-}
+
